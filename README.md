@@ -78,9 +78,10 @@ You can change the all MPPI parameters and settings in [the yaml file](./src/mpp
 
 
 ## Run Simulation with Visualization(2)
-**(In holonomic, I'm using summit_xl_sim)**
+**(Simulation in progress to control holonomics with Summit_xl_sim)**
 
-git clone this one first
+For the simulation environment, please clone and set up the following link:
+
 (https://github.com/RobotnikAutomation/summit_xl_sim/tree/noetic-devel)
 
 Launch simulator
