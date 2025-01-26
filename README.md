@@ -1,15 +1,7 @@
 
 # Stein Variational Guided Model Predictive Path Integral Control (SVG-MPPI)
 
-### [**Paper**](https://arxiv.org/abs/2309.11040) | [**Video**](https://www.youtube.com/watch?v=ML_aOYQIDL0) 
-
-This package includes ROS implementation of [Stein Variational Guided Model Predictive Path Integral Control: Proposal and Experiments with Fast Maneuvering Vehicles](https://arxiv.org/abs/2309.11040) presented in ICRA 2024.
-
-
-https://github.com/user-attachments/assets/25bd67c5-3e9c-4c4e-9a79-cacf066f4af5
-
-
-![Overview](docs/assets/overview_svg_mppi.png)
+Based on [Stein Variational Guided Model Predictive Path Integral Control: Proposal and Experiments with Fast Maneuvering Vehicles](https://arxiv.org/abs/2309.11040), modified to a holonomic-based code
 
 ## Tested Environment
 
@@ -65,7 +57,10 @@ cd proj-svg_mppi
 make build
 ```
 
-## Run Simulation with Visualization
+# Since it is holonomic now, you can follow simulation(2)
+
+## Run Simulation with Visualization(1)
+**(This for Ackermann based simulation with f1tenth_gym)**
 
 Launch simulator in the Docker container
 ```bash
@@ -81,32 +76,34 @@ cd proj-svg_mppi
 
 You can change the all MPPI parameters and settings in [the yaml file](./src/mppi_controller/config/mppi_controller.yaml)
 
-## Evaluation
 
-You can reproduce all simulation results in the paper by one command: 
+## Run Simulation with Visualization(2)
+**(Simulation in progress to control holonomics with Summit_xl_sim)**
+
+For the simulation environment, please clone and set up the following link:
+
+(https://github.com/RobotnikAutomation/summit_xl_sim/tree/noetic-devel)
+
+Launch simulator
 ```bash
-cd proj-svg_mppi/script
-./eval_all.sh
+cd /your_ws(summit_xl_sim)
+source ~/your_ws/devel/setup.bash
+roslaunch summit_xl_sim_bringup summit_xls_complete.launch
 ```
 
-Or, You can evaluate a fixed parameters by this command:
+launch mppi (local-planner)
 ```bash
-cd proj-svg_mppi/script
-./eval.sh
+cd /proj-svg_mppi
+source ~/pro-svg_mppi/devel/setup.bash
+roslaunch mppi_controller mppi_controller.launch is_simulation:=true # is_simulation:=true for launch trigger
+roslaunch local_costmap_generator local_costmap_generator.launch
+
+rostopic pub /mppi/start std_msgs/Empty -1  # for start mppi
 ```
 
-**Note**: The evaluation is used asynchronous simulation using ROS. So, the results can be slightly changed even if all seeds are fixed.
+**you can choose mppi-mode at mppi_controller.yaml**
+**Currently only forward_mppi and svg_mppi are available.**
 
 
-## Citation
 
-```bibtex
-@inproceedings{honda2024stein,
-  title={Stein Variational Guided Model Predictive Path Integral Control: Proposal and Experiments with Fast Maneuvering Vehicles},
-  author={Honda, Kohei and Akai, Naoki and Suzuki, Kosuke and Aoki, Mizuho and Hosogaya, Hirotaka and Okuda, Hiroyuki and Suzuki, Tatsuya},
-  booktitle={2024 IEEE International Conference on Robotics and Automation (ICRA)},
-  pages={7020--7026},
-  year={2024},
-  organization={IEEE}
-}
-```
+
