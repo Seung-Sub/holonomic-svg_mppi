@@ -39,58 +39,164 @@ namespace cpu {
         }
     }
 
-    std::pair<ControlSeq, double> ForwardMPPI::solve(const State& initial_state) {
-        // ROS_INFO_THROTTLE(1.0, "ForwardMPPI::solve started");
+    // std::pair<ControlSeq, double> ForwardMPPI::solve(const State& initial_state) {
+    //     // ROS_INFO_THROTTLE(1.0, "ForwardMPPI::solve started");
+    //     int collision_num = 0;
+    //     const std::array<double, CONTROL_SPACE::dim> control_cov_diag = {Vx_cov_, Vy_cov_, w_cov_};
+
+    //     ControlSeq control_seq_mean = prev_control_seq_;
+    //     ControlSeqCovMatrices control_seq_cov_matrices = prior_samples_ptr_->get_constant_control_seq_cov_matrices(control_cov_diag);
+
+    //     // Random sampling
+    //     prior_samples_ptr_->random_sampling(control_seq_mean, control_seq_cov_matrices);
+        
+    //     // Transport random samples with stein variational gradient descent
+    //     auto func_calc_costs = [&](const PriorSamplesWithCosts& sampler) { return mpc_base_ptr_->calc_sample_costs(sampler, initial_state).first; };
+    //     // Transport samples
+    //     // ROS_INFO_THROTTLE(1.0, "Sample transport started");
+    //     prior_samples_ptr_->noised_control_seq_samples_ =
+    //         transport_samples(*prior_samples_ptr_, func_calc_costs, num_itr_for_grad_estimation_, step_size_for_grad_estimation_);
+    //     // const ControlSeqBatch grad_kld_batch = grad_reverse_kld_batch(*prior_samples_ptr_, func_calc_costs);
+    //     // prior_samples_ptr_->noised_control_seq_samples_ = transport_samples(*prior_samples_ptr_, grad_kld_batch,
+    //     //                                                                     num_itr_for_grad_estimation_, step_size_for_grad_estimation_);
+
+    //         // let's see the first few samples
+    //     for (size_t i = 0; i < 5; i++) {
+    //         ROS_INFO_STREAM_THROTTLE(5.0) << "[ForwardMPPI::solve] (Sample " << i << ") initial noised seq:\n"
+    //                                     << prior_samples_ptr_->noised_control_seq_samples_[i];
+    //     }
+    //     // Cost calculation
+    //     auto [_costs, collision_costs] = mpc_base_ptr_->calc_sample_costs(*prior_samples_ptr_, initial_state);
+    //     prior_samples_ptr_->costs_ = std::forward<std::vector<double>>(_costs);
+    //     collision_num = std::count_if(collision_costs.begin(), collision_costs.end(), [](const double& cost) { return cost > 0.0; });
+        
+
+    //     // check min/max cost
+    //     double min_c = 1e20, max_c = -1.0;
+    //     for (auto &c : _costs) {
+    //         if (c < min_c) min_c = c;
+    //         if (c > max_c) max_c = c;
+    //     }
+    //     ROS_INFO_THROTTLE(1.0, "[ForwardMPPI::solve] cost range: min=%.3f, max=%.3f", min_c, max_c);
+
+    //     // Weight calculation
+    //     const std::vector<double> weights = calc_weights(*prior_samples_ptr_);
+    //     weights_ = weights;  // Stored for visualization
+    //     // ROS_INFO_THROTTLE(1.0, "Weight calculation completed");
+
+    //     // Calculate optimal control sequence
+
+    //     ControlSeq updated_control_seq = prior_samples_ptr_->get_zero_control_seq();
+    //     for (size_t i = 0; i < prior_samples_ptr_->get_num_samples(); i++) {
+    //         updated_control_seq += weights[i] * prior_samples_ptr_->noised_control_seq_samples_.at(i);
+    //     }
+
+
+    //     // Update mean control sequence for next iteration
+    //     prev_control_seq_ = updated_control_seq;
+
+    //     const double collision_rate = static_cast<double>(collision_num) / static_cast<double>(prior_samples_ptr_->get_num_samples());
+
+    //     return std::make_pair(updated_control_seq, collision_rate);
+    // }
+
+    std::pair<ControlSeq, double> ForwardMPPI::solve(const State& initial_state){
+        // 1) Prepare common variables
         int collision_num = 0;
         const std::array<double, CONTROL_SPACE::dim> control_cov_diag = {Vx_cov_, Vy_cov_, w_cov_};
 
+        // Use previous control seq as the "mean" for sampling
         ControlSeq control_seq_mean = prev_control_seq_;
-        ControlSeqCovMatrices control_seq_cov_matrices = prior_samples_ptr_->get_constant_control_seq_cov_matrices(control_cov_diag);
+        ControlSeqCovMatrices control_seq_cov_matrices =
+            prior_samples_ptr_->get_constant_control_seq_cov_matrices(control_cov_diag);
 
-        // Random sampling
-        // ROS_INFO_THROTTLE(1.0, "Random sampling started");
+        // 2) Random sampling
         prior_samples_ptr_->random_sampling(control_seq_mean, control_seq_cov_matrices);
-        // ROS_INFO_THROTTLE(1.0,"Random sampling completed");
 
-        // Transport random samples with stein variational gradient descent
-        auto func_calc_costs = [&](const PriorSamplesWithCosts& sampler) { return mpc_base_ptr_->calc_sample_costs(sampler, initial_state).first; };
-        // Transport samples
-        // ROS_INFO_THROTTLE(1.0, "Sample transport started");
+        // (Optional) Stein Variational Gradient step
+        // Here if num_itr_for_grad_estimation_ == 0, it basically won't do anything
+        auto func_calc_costs = [&](const PriorSamplesWithCosts& sampler) {
+            return mpc_base_ptr_->calc_sample_costs(sampler, initial_state).first;
+        };
         prior_samples_ptr_->noised_control_seq_samples_ =
-            transport_samples(*prior_samples_ptr_, func_calc_costs, num_itr_for_grad_estimation_, step_size_for_grad_estimation_);
-        // const ControlSeqBatch grad_kld_batch = grad_reverse_kld_batch(*prior_samples_ptr_, func_calc_costs);
-        // prior_samples_ptr_->noised_control_seq_samples_ = transport_samples(*prior_samples_ptr_, grad_kld_batch,
-        //                                                                     num_itr_for_grad_estimation_, step_size_for_grad_estimation_);
+            transport_samples(*prior_samples_ptr_, func_calc_costs,
+                            num_itr_for_grad_estimation_,
+                            step_size_for_grad_estimation_);
 
-        // Cost calculation
-        // ROS_INFO_THROTTLE(1.0, "Sample cost calculation started");
-        auto [_costs, collision_costs] = mpc_base_ptr_->calc_sample_costs(*prior_samples_ptr_, initial_state);
+        // -------------------------------------------------
+        // (A) LOG : Check first few sampled control seq
+        // -------------------------------------------------
+        for (size_t i = 0; i < 5 && i < prior_samples_ptr_->get_num_samples(); i++) {
+            // This prints only 5 samples max, throttled every 5 sec
+            ROS_INFO_STREAM_THROTTLE(5.0, "[ForwardMPPI::solve] (Sample " << i << ") noised seq:\n"
+                << prior_samples_ptr_->noised_control_seq_samples_[i]
+            );
+        }
+
+        // 3) Cost calculation
+        auto [_costs, collision_costs] =
+            mpc_base_ptr_->calc_sample_costs(*prior_samples_ptr_, initial_state);
+
         prior_samples_ptr_->costs_ = std::forward<std::vector<double>>(_costs);
-        collision_num = std::count_if(collision_costs.begin(), collision_costs.end(), [](const double& cost) { return cost > 0.0; });
-        ROS_INFO_THROTTLE(1.0, "Sample cost calculation completed: Number of collisions=%d", collision_num);
 
-        // Weight calculation
-        // ROS_INFO_THROTTLE(1.0, "Weight calculation started");
+        // Count how many samples had nonzero collision cost
+        collision_num = std::count_if(
+            collision_costs.begin(), collision_costs.end(),
+            [](const double& cc) { return cc > 0.0; }
+        );
+
+        // -------------------------------------------------
+        // (B) LOG : min / max cost among samples
+        // -------------------------------------------------
+        double min_c = 1e20, max_c = -1.0;
+        for (auto &c : _costs) {
+            if (c < min_c) min_c = c;
+            if (c > max_c) max_c = c;
+        }
+        ROS_INFO_THROTTLE(1.0,
+            "[ForwardMPPI::solve] cost range among samples: min=%.3f, max=%.3f",
+            min_c, max_c);
+
+        // 4) Weight calculation
         const std::vector<double> weights = calc_weights(*prior_samples_ptr_);
-        weights_ = weights;  // Stored for visualization
-        // ROS_INFO_THROTTLE(1.0, "Weight calculation completed");
+        weights_ = weights;  // (stored for visualization)
 
-        // Calculate optimal control sequence
-        // ROS_INFO_THROTTLE(1.0, "Optimal control sequence calculation started");
+        // -------------------------------------------------
+        // (C) LOG : sum(weights) should be near 1.0
+        // -------------------------------------------------
+        double sum_w = 0.0;
+        for (auto &w : weights) sum_w += w;
+        ROS_INFO_THROTTLE(1.0,
+            "[ForwardMPPI::solve] sum(weights)=%.4f (expected ~1.0)", sum_w);
+
+        // 5) Build updated_control_seq
         ControlSeq updated_control_seq = prior_samples_ptr_->get_zero_control_seq();
         for (size_t i = 0; i < prior_samples_ptr_->get_num_samples(); i++) {
-            updated_control_seq += weights[i] * prior_samples_ptr_->noised_control_seq_samples_.at(i);
+            updated_control_seq += weights[i] *
+                                prior_samples_ptr_->noised_control_seq_samples_[i];
         }
-        // ROS_INFO_THROTTLE(1.0, "Optimal control sequence calculation completed");
 
-        // Update mean control sequence for next iteration
+        // -------------------------------------------------
+        // (D) LOG : see the first row of updated control seq
+        // -------------------------------------------------
+        ROS_INFO_THROTTLE(1.0,
+            "[ForwardMPPI::solve] updated_control_seq(0, :)= (%.3f, %.3f, %.3f)",
+            updated_control_seq(0, 0),
+            updated_control_seq(0, 1),
+            updated_control_seq(0, 2));
+
+        // 6) Store new mean as prev_control_seq_
         prev_control_seq_ = updated_control_seq;
 
-        const double collision_rate = static_cast<double>(collision_num) / static_cast<double>(prior_samples_ptr_->get_num_samples());
-        ROS_INFO_THROTTLE(1.0, "ForwardMPPI::solve completed: Collision Rate=%.2f", collision_rate);
+        // 7) Compute collision rate
+        const double collision_rate =
+            static_cast<double>(collision_num)
+            / static_cast<double>(prior_samples_ptr_->get_num_samples());
 
+        // 8) Return final result
         return std::make_pair(updated_control_seq, collision_rate);
     }
+
 
     void ForwardMPPI::set_obstacle_map(const grid_map::GridMap& obstacle_map) { mpc_base_ptr_->set_obstacle_map(obstacle_map); };
 

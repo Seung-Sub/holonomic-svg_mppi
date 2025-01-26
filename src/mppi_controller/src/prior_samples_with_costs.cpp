@@ -52,6 +52,13 @@ namespace cpu {
         for (size_t i = 0; i < prediction_horizon_ - 1; i++) {
             for (size_t j = 0; j < CONTROL_SPACE::dim; j++) {
                 const double std_dev = std::sqrt(control_seq_cov_matrices_[i](j, j));
+                // 디버그:
+                if (i<1 && j<1) {
+                    ROS_INFO_STREAM("   [random_sampling] control_seq_cov[" << i
+                                    << "]( " << j << "," << j << " )="
+                                    << control_seq_cov_matrices_[i](j, j)
+                                    << ", std_dev=" << std_dev);
+                }
                 std::normal_distribution<>::param_type param(0.0, std_dev);
                 (*normal_dists_ptr_)[i][j].param(param);
             }
@@ -59,6 +66,10 @@ namespace cpu {
 
 #pragma omp parallel for num_threads(thread_num_)
         for (size_t i = 0; i < num_samples_; i++) {
+            // 추가:
+            noised_control_seq_samples_[i].setZero();
+            noise_seq_samples_[i].setZero();
+
             // generate noise sequence
             for (size_t j = 0; j < prediction_horizon_ - 1; j++) {
                 for (size_t k = 0; k < CONTROL_SPACE::dim; k++) {
@@ -82,12 +93,11 @@ namespace cpu {
                         std::clamp(noised_control_seq_samples_[i](k, j), min_control_inputs_[j], max_control_inputs_[j]);
                 }
             }
-            // // 추가: 샘플이 제대로 추가되고 있는지 확인
-            // if (i < 5) { // 상위 5개 샘플만 로그 출력
-            //     std::stringstream ss;
-            //     ss << "Sample " << i << " Control Seq: " << noised_control_seq_samples_[i];
-            //     ROS_INFO_THROTTLE(5.0, "%s", ss.str().c_str());
-            // }
+            if (i < 2) {
+            ROS_INFO_STREAM(" [random_sampling] i=" << i
+                << " noised_control_seq_samples_[i].row(0)="
+                << noised_control_seq_samples_[i].row(0));
+            }
         }
     }
 

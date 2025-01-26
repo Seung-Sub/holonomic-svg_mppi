@@ -22,6 +22,7 @@ namespace cpu {
         double roll, pitch, yaw;
         mat.getRPY(roll, pitch, yaw);
         return yaw;
+        ROS_INFO_THROTTLE(1.0, "getYawFromQuaternion: yaw=%.2f", yaw);
     }
 
     //-------------------------
@@ -109,6 +110,8 @@ namespace cpu {
     std::pair<std::vector<double>, std::vector<double>> MPCBase::calc_sample_costs(const PriorSamplesWithCosts& sampler, const cpu::State& init_state, cpu::StateSeqBatch* state_seq_candidates) const{
         
         const size_t N = sampler.get_num_samples();
+        ROS_INFO_STREAM(" [calc_sample_costs] N=" << N);
+
         std::vector<double> costs(N, 0.0);
         std::vector<double> collision_costs(N, 0.0);
 
@@ -126,9 +129,10 @@ namespace cpu {
             collision_costs[i] = coll_cost;
 
             // Individual sample logging
-            ROS_INFO_THROTTLE(1.0, "Sample %zu: Total Cost=%.2f, Collision Cost=%.2f", i, total_cost, coll_cost);
+            ROS_INFO_THROTTLE(3.0, "Sample %zu: Total Cost=%.2f, Collision Cost=%.2f", i, total_cost, coll_cost);
         }
-       
+        ROS_INFO_STREAM(" [calc_sample_costs] done. costs.size()=" << costs.size()
+                    << " ex: cost[0]=" << costs[0]);
         return std::make_pair(costs, collision_costs);
     }
 
@@ -141,7 +145,15 @@ namespace cpu {
              */
 
     cpu::StateSeq MPCBase::predict_state_seq(const cpu::ControlSeq& control_seq, const cpu::State& init_state) const{
-       
+        
+        // For debugging:
+        if (control_seq.rows() == 0) {
+            ROS_ERROR(" predict_state_seq got empty control_seq! rows=0??");
+        } else {
+            // maybe print the first row:
+            ROS_INFO_STREAM_ONCE(" [predict_state_seq] control_seq(0)=" << control_seq.row(0));
+        }
+
         cpu::StateSeq seq = Eigen::MatrixXd::Zero(prediction_step_size_, STATE_SPACE::dim);
         // Initial state
         seq.row(0) = init_state.transpose();
@@ -166,7 +178,7 @@ namespace cpu {
             seq(i+1, STATE_SPACE::yaw) = std::atan2(std::sin(yaw_new), std::cos(yaw_new));
 
             // Individual step logging
-            ROS_INFO_THROTTLE(1.0, "Predict step %zu: x=%.2f, y=%.2f, yaw=%.2f", i, x_new, y_new, yaw_new);
+            ROS_INFO_THROTTLE(3.0, "Predict step %zu: x=%.2f, y=%.2f, yaw=%.2f", i, x_new, y_new, yaw_new);
         }
         
         return seq;
@@ -211,7 +223,7 @@ namespace cpu {
                         double dx = pose.pose.position.x - x;
                         double dy = pose.pose.position.y - y;
                         double dist = std::hypot(dx, dy);
-                        // ROS_INFO_THROTTLE(1.0 ,"Check dist: dx=%.3f, dy=%.3f => dist=%.3f", dx,dy,dist);
+                
                         if (dist < min_dist) {
                             min_dist = dist;
                             path_yaw = getYawFromQuaternion(pose.pose.orientation);
@@ -224,6 +236,12 @@ namespace cpu {
                 double diff_yaw = yaw - path_yaw;
                 diff_yaw = std::atan2(std::sin(diff_yaw), std::cos(diff_yaw));
 
+                // 임시 디버그: 거리, 각도
+                // (i가 0일 때만 출력 or THROTTLE)
+                if(i == 0) {
+                    ROS_INFO_THROTTLE(1.0, "[state_cost] Step=0, (x=%.3f, y=%.3f), min_dist=%.3f, diff_yaw=%.3f",
+                                    x, y, min_dist, diff_yaw);
+                }
                 sum_cost += q_dist_  * (min_dist * min_dist);
                 sum_cost += q_angle_ * (diff_yaw * diff_yaw);
 
@@ -234,7 +252,13 @@ namespace cpu {
                     if (obstacle_map_.isInside(pos)) {
                         collision_val =
                             obstacle_map_.atPosition("collision_layer", pos);
+                    } else {
+                            // debug
+                            ROS_DEBUG_THROTTLE(1.0, "[state_cost] (x=%.3f,y=%.3f) is outside map, collision_val=%.2f",
+                                            x, y, collision_val);
                     }
+                } else {
+                    ROS_WARN_THROTTLE(5.0, "[state_cost] obstacle_layer not exist!");
                 }
                 sum_collision_cost += collision_val * collision_weight_;
                 // 상세 로그 추가
@@ -285,8 +309,10 @@ namespace cpu {
             }
 
             double total_cost = sum_cost + sum_collision_cost;
-            // 최종 비용 로그
-            // ROS_INFO_THROTTLE(2.0, "Total Cost: %.2f, Collision Cost: %.2f", sum_cost, sum_collision_cost);
+            
+            // ex) 첫번째 스텝만, 혹은 throttled로 찍기
+            ROS_INFO_THROTTLE(3.0, "[state_cost] sum_cost=%.3f, sum_collision=%.3f => total=%.3f",
+                            sum_cost, sum_collision_cost, total_cost);
             return std::make_pair(total_cost, sum_collision_cost);
         }
 

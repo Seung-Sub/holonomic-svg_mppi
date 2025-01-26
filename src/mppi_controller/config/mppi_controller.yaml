@@ -1,5 +1,5 @@
 # system
-control_cmd_topic: cmd_vel
+control_cmd_topic: /robot/move_base/cmd_vel
 in_reference_sdf_topic: /robot/move_base/GlobalPlanner/plan
 in_odom_topic: /robot/robotnik_base_control/odom
 is_activate_ad_topic: is_active_ad

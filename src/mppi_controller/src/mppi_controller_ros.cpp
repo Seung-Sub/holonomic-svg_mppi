@@ -21,7 +21,7 @@ MPPIControllerROS::MPPIControllerROS() : nh_(""), private_nh_("~"), tf_listener_
     std::string local_costmap_id;
     std::string in_backward_point_topic;
 
-    private_nh_.param("control_cmd_topic", control_cmd_topic, static_cast<std::string>("cmd_vel"));
+    private_nh_.param("control_cmd_topic", control_cmd_topic, static_cast<std::string>("/robot/move_base/cmd_vel"));
     private_nh_.param("in_reference_sdf_topic", in_reference_sdf_topic, static_cast<std::string>("/robot/move_base/GlobalPlanner/plan"));
     private_nh_.param("in_odom_topic", in_odom_topic, static_cast<std::string>("robot/robotnik_base_control/odom"));
     private_nh_.param("robot_frame_id", robot_frame_id_, static_cast<std::string>("robot_base_link"));
@@ -119,10 +119,10 @@ MPPIControllerROS::MPPIControllerROS() : nh_(""), private_nh_("~"), tf_listener_
     }
 
     // set publishers and subscribers
-    pub_cmd_vel_ = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1); 
+    pub_cmd_vel_ = nh_.advertise<geometry_msgs::Twist>(control_cmd_topic, 1);
     
     // global path subscriber (nav_msgs::Path)
-    sub_global_path_ = nh_.subscribe("/robot/move_base/GlobalPlanner/plan", 1,&MPPIControllerROS::callbackGlobalPath, this);
+    sub_global_path_ = nh_.subscribe(in_reference_sdf_topic, 1,&MPPIControllerROS::callbackGlobalPath, this);
 
     // obstacle map
     sub_grid_map_ = nh_.subscribe(local_costmap_id, 1, &MPPIControllerROS::callback_grid_map, this);
@@ -149,7 +149,6 @@ MPPIControllerROS::MPPIControllerROS() : nh_(""), private_nh_("~"), tf_listener_
     pub_speed_ = nh_.advertise<std_msgs::Float32>("mppi/speed", 1, true);
     pub_collision_rate_ = nh_.advertise<std_msgs::Float32>("mppi/collision_rate", 1, true);
     // Publishers and Subscribers
-    pub_cmd_vel_ = nh_.advertise<geometry_msgs::Twist>("cmd_vel", 1);
     pub_cost_ = nh_.advertise<std_msgs::Float32>("mppi/cost", 1, true);
     pub_mppi_metrics_ = nh_.advertise<mppi_metrics_msgs::MPPIMetrics>("mppi/eval_metrics", 1, true);
 
@@ -203,21 +202,35 @@ void MPPIControllerROS::callback_odom_with_pose(const nav_msgs::Odometry& odom) 
     try {
         trans_form_stamped = tf_buffer_.lookupTransform(map_frame_id_, robot_frame_id_, ros::Time(0));
     } catch (const tf2::TransformException& ex) {
-        ROS_WARN_THROTTLE(3.0, "[MPPIController]: %s", ex.what());
+        ROS_WARN_THROTTLE(3.0, "[MPPIControllerROS] TF transform failed: %s", ex.what());
         return;
     };
 
+    // Print transform to see if it's valid
+    ROS_INFO_THROTTLE(1.0, "[MPPIControllerROS] transform %s -> %s at time=%.3f",
+                      map_frame_id_.c_str(), robot_frame_id_.c_str(),
+                      trans_form_stamped.header.stamp.toSec());
+    ROS_INFO_THROTTLE(1.0, "  translation=(%.3f, %.3f, %.3f)",
+                      trans_form_stamped.transform.translation.x,
+                      trans_form_stamped.transform.translation.y,
+                      trans_form_stamped.transform.translation.z);
+    // ROS_INFO_THROTTLE(1.0, "  rotation=(%.3f, %.3f, %.3f, %.3f)",
+    //                   trans_form_stamped.transform.rotation.x,
+    //                   trans_form_stamped.transform.rotation.y,
+    //                   trans_form_stamped.transform.rotation.z,
+    //                   trans_form_stamped.transform.rotation.w);
     /*Update status*/
     robot_state_.x = trans_form_stamped.transform.translation.x;
     robot_state_.y = trans_form_stamped.transform.translation.y;
     const double _yaw = tf2::getYaw(trans_form_stamped.transform.rotation);
     robot_state_.yaw = std::atan2(std::sin(_yaw), std::cos(_yaw));
-    // robot_state_.vel = odom.twist.twist.linear.x;
+    
 
     is_robot_state_ok_ = true;
 
-    // 상태 업데이트 후 로그 추가
-    // ROS_INFO_THROTTLE(1.0, "Robot State Updated: x=%.2f, y=%.2f, yaw=%.2f", robot_state_.x, robot_state_.y, robot_state_.yaw);
+    // Confirm final x,y,yaw
+    ROS_INFO_THROTTLE(1.0, "[MPPIControllerROS] Robot state updated: x=%.3f, y=%.3f, yaw=%.3f",
+                      robot_state_.x, robot_state_.y, robot_state_.yaw);
 }
 
 
@@ -234,7 +247,7 @@ void MPPIControllerROS::callback_grid_map(const grid_map_msgs::GridMap& grid_map
     }
 
     is_costmap_ok_ = true;
-    ROS_INFO_THROTTLE(2.0, "Obstacle map updated with size: [%u x %u]", obstacle_map_.getSize()(0), obstacle_map_.getSize()(1));
+    // ROS_INFO_THROTTLE(2.0, "Obstacle map updated with size: [%u x %u]", obstacle_map_.getSize()(0), obstacle_map_.getSize()(1));
 }
 
 
@@ -304,7 +317,7 @@ void MPPIControllerROS::timer_callback([[maybe_unused]] const ros::TimerEvent& t
     double calc_time = stop_watch_.lap();
     mtx_.unlock();
 
-    ROS_INFO_THROTTLE(1.0, "MPPI solver execution completed: Collision Rate=%.2f, Calculation Time=%.2f", collision_rate, calc_time);
+    // ROS_INFO_THROTTLE(1.0, "MPPI solver execution completed: Collision Rate=%.2f, Calculation Time=%.2f", collision_rate, calc_time);
 
     // 제어 명령 퍼블리시
     geometry_msgs::Twist cmd_vel;
@@ -312,7 +325,7 @@ void MPPIControllerROS::timer_callback([[maybe_unused]] const ros::TimerEvent& t
     cmd_vel.linear.y  = best_control_seq(0, mppi::CONTROL_SPACE::Vy);
     cmd_vel.angular.z = best_control_seq(0, mppi::CONTROL_SPACE::w);
     pub_cmd_vel_.publish(cmd_vel);
-    ROS_INFO_THROTTLE(1.0, "Control command published: Vx=%.2f, Vy=%.2f, w=%.2f", cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z);
+    ROS_INFO_THROTTLE(3.0, "Control command published: Vx=%.2f, Vy=%.2f, w=%.2f", cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z);
     
 
     // Predict state sequence
