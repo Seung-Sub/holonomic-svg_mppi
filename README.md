@@ -57,6 +57,8 @@ cd proj-svg_mppi
 make build
 ```
 
+# Since it is holonomic now, you can follow simulation(2)
+
 ## Run Simulation with Visualization(1)
 **(This for Ackermann based simulation with f1tenth_gym)**
 
@@ -73,6 +75,7 @@ cd proj-svg_mppi
 ```
 
 You can change the all MPPI parameters and settings in [the yaml file](./src/mppi_controller/config/mppi_controller.yaml)
+
 
 ## Run Simulation with Visualization(2)
 **(In holonomic, I'm using summit_xl_sim)**
@@ -99,3 +102,7 @@ rostopic pub /mppi/start std_msgs/Empty -1  # for start mppi
 
 **you can choose mppi-mode at mppi_controller.yaml**
 **Currently only forward_mppi and svg_mppi are available.**
+
+
+
+
